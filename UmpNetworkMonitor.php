@@ -28,6 +28,7 @@ class UmpNetworkMonitor {
 
 //Declare var for store data temporary
 private $data = array();
+private $departmentList = array();
 private $request_jabatan;
 private $blogs;
 private $total_jabatan_publish_post;
@@ -50,9 +51,10 @@ private $jabatan_lists;
       add_action('network_admin_menu', array($this,'add_network_menu_rl'));
 
       add_action( 'wpmu_new_blog', array( $this, 'setDepartment' ) );
-      
+
       //Get all blogs info
       $this->blogs =  $this->getBlog();
+      $this->setAllBlogDepartment();
       $this->script();
 
       
@@ -86,6 +88,10 @@ private $jabatan_lists;
       wp_register_script( 'chart-min', plugins_url( '/js/Chart.min.js', __FILE__ ));
       wp_enqueue_script('chart-min'); 
 
+      wp_deregister_script( 'ump-js' );
+      wp_register_script( 'ump-js', plugins_url( '/js/ump.js', __FILE__ ));
+      wp_enqueue_script('ump-js'); 
+
     }
 
     ////////////////////////////////////////////////////////////////
@@ -118,9 +124,38 @@ private $jabatan_lists;
 
       return $query;
     }
-    ////////////////////////////////////////////////////////////////
-    //Get list jabatan info
 
+    ////////////////////////////////////////////////////////////////
+    //Set all blogs department for all pre-registration before installation
+    
+    function setAllBlogDepartment(){
+    
+      foreach ($this->blogs as $blog) 
+        {
+           
+            //Switch to current blog
+            switch_to_blog( $blog->blog_id );
+            
+            //Dapatkan jabatan blog
+            //$current_jabatan = get_blog_option(get_current_blog_id(),'department');
+
+            if(get_blog_option(get_current_blog_id(),'department')){    
+        
+                 $this->jabatan = get_blog_option(get_current_blog_id(),'department');
+
+            }else{
+                
+                update_blog_option(get_current_blog_id(),'department','-');   
+               // $this->jabatan = '';
+            }
+
+        }
+
+    }    
+    
+    ////////////////////////////////////////////////////////////////
+    //Get list jabatan
+    
     function getJabatanList(){
        //Get all faculty list form jabatan.json
             $json = file_get_contents(plugins_url( 'jabatan.json', __FILE__ )); 
@@ -129,6 +164,58 @@ private $jabatan_lists;
             return $j['JABATAN'];
 
     }
+
+    ////////////////////////////////////////////////////////////////
+    //Tukar jabatan
+    
+    function changeDepartment(){
+    ?>
+
+    <p>Change checked department to <select name="jabatan" id="jabatan">
+
+    <?php 
+
+    foreach($this->jabatan_lists as $j){
+      echo "<option value='".$j['ptj_acro']."'>".$j['ptj_acro']."</option>";
+    }
+
+      ?>
+
+    <input type="submit" name="changeDepartment" value="Save" class="button button-primary button-large" id="changeDepartment">
+    
+
+    <?php
+    }
+
+    ////////////////////////////////////////////////////////////////
+    //This function generage CSV files
+    //
+    function generateCSV(){
+    
+    //var_dump($this->data);
+    if (isset($_POST['csv'])){   
+     // echo "test";
+     
+      $fileName = date("Ymd").'-'.$this->request_jabatan.'.csv';
+      $fp = @fopen(plugin_dir_path( __FILE__ ).'csv/'.$fileName, 'w') or die('Cannot open the file');
+     //$fp = @fopen(plugin_dir_path( __FILE__ ).''.$fileName, 'w') or die('Cannot open the file');
+    
+
+      if($fp)
+        echo '<a href="'.plugins_url( 'csv/'.$fileName, __FILE__ ).'"> DOWNLOAD </a>';
+        //echo '<a href="'.plugins_url($fileName, __FILE__ ).'"> DOWNLOAD </a>';
+ 
+      foreach ($this->departmentList as $fields) {
+          fputcsv($fp, $fields);
+     }// END FOREACH
+
+      fclose($fp);
+      // Make sure nothing else is sent, our file is done
+      die();
+      //exit;
+    }// END IF
+    
+    }// END FUNCTION
 
     ////////////////////////////////////////////////////////////////
     //Get Jabatan
@@ -222,7 +309,10 @@ private $jabatan_lists;
           // Configuration options go here
           options: {}
       });
+
+     
       </script>
+
 
       <?php
 
@@ -312,6 +402,19 @@ private $jabatan_lists;
     //create plugin option
     //
     function my_plugin_options() {
+
+        
+
+        // Check if POST Variable is available
+        if(isset($_POST['changeDepartment'])){
+          if ((isset($_POST['bid'])&&isset($_POST['jabatan']))) {    
+           // if($_POST['jabatan']!='-'){
+              foreach($_POST['bid'] as $bid){
+                 update_blog_option($bid,'department',sanitize_text_field($_POST['jabatan']));
+              }//CLOSE FOR
+           // }//CLOSE IF            
+          } // CLOSE IF
+        }
       
         //Check if no blog exist
         if ( empty( $this->blogs ) ) 
@@ -328,11 +431,16 @@ private $jabatan_lists;
         ?>     
 
        <div class="wrap">   
+       <form method="POST">
+
+      
 
         <h3>UMP BLOGGERS STATISTICS & REPORT (<?php echo $this->request_jabatan; ?>) </h3>
+
         <table class="widefat">
             <thead>
                 <tr>
+                 <th><input type="checkbox" name="chk" id="select-all"></th>
                  <th>No.</th>
                  <th>ID</th>
                     <th>Blog Setting</th>
@@ -345,6 +453,7 @@ private $jabatan_lists;
             </thead>
             <tfoot>
                 <tr>
+                <th> </th>
                 <th>No.</th>
                  <th>ID</th>
                 <th>Blog Setting</th>
@@ -391,16 +500,35 @@ private $jabatan_lists;
                             $total_jabatan_publish_post+=$publish_posts;
                             $total_jabatan_draft_post+=$draft_posts;
 
+                            $this->departmentList[$i][0] = get_current_blog_id();
+                            $this->departmentList[$i][1] = get_blog_details(get_current_blog_id())->siteurl.'/wp-admin/admin.php?page=Ump_Blog_Setting';
+                            $this->departmentList[$i][2] = $publish_posts;
+                            $this->departmentList[$i][3] = $draft_posts;
+                            $this->departmentList[$i][4] = $current_jabatan;
+                            $this->departmentList[$i][5] = get_bloginfo('admin_email');
+                            $this->departmentList[$i][6] = get_blog_details(get_current_blog_id())->siteurl; 
+/*
+                            //$this->data[$current_jabatan]['jumlah_blog']+=1;
+                            $this->departmentList[0][0] = 1;
+                            $this->departmentList[0][1] = 2;
+                            $this->departmentList[0][2] = 3;
+                            $this->departmentList[0][3] = 4;
+                            $this->departmentList[0][4] = 5;
+                            $this->departmentList[0][5] = 6;
+                            $this->departmentList[0][6] = 7; 
+
+*/
                           ?>
 
                            <tr>
+                             <td><input type="checkbox" name="bid[]" value="<?php echo get_current_blog_id(); ?>"></td>
                              <td><?php echo $i; ?></td>
                              <td><?php echo get_current_blog_id(); ?></td>
                              <td><a href="<?php echo get_blog_details(get_current_blog_id())->siteurl.'/wp-admin/admin.php?page=Ump_Blog_Setting'; ?>"><?php echo $blog->path; ?></a></td>
                              <td><?php echo $publish_posts; ?></td>
                              <td><?php echo $draft_posts; ?></td>
-                             <th><?php echo $current_jabatan;?></th>
-                             <th><?php echo get_bloginfo('admin_email'); ?></th>
+                             <td><?php echo $current_jabatan;?></td>
+                             <td><?php echo get_bloginfo('admin_email'); ?></td>
                              <td><a href="<?php echo get_blog_details(get_current_blog_id())->siteurl; ?>"> Visit </a></td>
                            </tr>
                         <?php 
@@ -434,12 +562,15 @@ private $jabatan_lists;
             <tr>
                 <td></td>
                 <td></td>
+                <td></td>
                  <td><b>Total count</b></td>
                
             <?php if(isset($this->request_jabatan)){ ?>
                  <td><?php echo $total_jabatan_publish_post; ?></td>
                  <td><?php echo $total_jabatan_draft_post; ?></td>
-              
+              <td></td>
+              <td></td>
+              <td></td>
                <?php 
              }else{
             ?>
@@ -449,18 +580,34 @@ private $jabatan_lists;
 
 
             <?php
-             }
+             } 
                ?>
 
                </tr>
         </tbody>
         </table>
        
-        </div>
+        <?php  
 
+         $this->changeDepartment();
+        
+?>
+         <input type="submit" value="GENERATE .CSV" name="csv" class="button button-primary button-large" id="generateCSV">
+<?php
+          $this->generateCSV();
+
+         //var_dump($this->departmentList);
+
+        ?>
+
+
+       </form>
+        </div> 
 
 
         <?php 
+
+       
 
       }else{
 
